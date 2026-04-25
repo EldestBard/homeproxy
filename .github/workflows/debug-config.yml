@@ -93,8 +93,7 @@ jobs:
 
       - name: Generate test config with mock data
         run: |
-          # Create a test config to validate JSON structure
-          cat > /tmp/test_config.json << 'EOF'
+          cat > /tmp/test_config.json << 'ENDOFJSON'
 {
   "log": {
     "disabled": false,
@@ -170,7 +169,7 @@ jobs:
     }
   }
 }
-EOF
+ENDOFJSON
 
           echo "=== Testing sing-box config validation ==="
           if sing-box check --config /tmp/test_config.json 2>&1; then
