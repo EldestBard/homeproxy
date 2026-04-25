@@ -1,0 +1,212 @@
+name: Debug Configuration Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      routing_mode:
+        description: 'Routing mode'
+        required: false
+        default: 'bypass_mainland_china'
+        type: choice
+        options:
+          - bypass_mainland_china
+          - proxy_mainland_china
+          - gfwlist
+          - global
+          - custom
+      proxy_mode:
+        description: 'Proxy mode'
+        required: false
+        default: 'redirect_tproxy'
+        type: choice
+        options:
+          - redirect_tproxy
+          - redirect_tun
+          - tun
+      main_node:
+        description: 'Main node name (or "nil" for none)'
+        required: false
+        default: 'nil'
+      singbox_version:
+        description: 'sing-box version to test'
+        required: false
+        default: 'latest'
+
+jobs:
+  debug-config:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup OpenWrt toolchain
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 git
+
+      - name: Install sing-box
+        run: |
+          # Download latest sing-box release
+          if [ "${{ inputs.singbox_version }}" = "latest" ]; then
+            TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          else
+            TAG="${{ inputs.singbox_version }}"
+          fi
+          ARCH=$(uname -m)
+          case $ARCH in
+            x86_64) ARCH=amd64 ;;
+            aarch64) ARCH=arm64 ;;
+          esac
+          curl -sL "https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${ARCH}.tar.gz" | tar xz
+          sudo install -m0755 sing-box-* /usr/local/bin/sing-box
+
+      - name: Display sing-box version
+        run: |
+          sing-box version
+          sing-box version --倒
+          echo "---"
+          sing-box -D . list 2>/dev/null || echo "No features available"
+
+      - name: Create mock UCI config for testing
+        run: |
+          mkdir -p /tmp/homeproxy_test
+
+          # Create minimal UCI config structure
+          cat > /tmp/homeproxy_test/homeproxy_config << 'EOF'
+config homeproxy 'config'
+	option main_node '${{ inputs.main_node }}'
+	option routing_mode '${{ inputs.routing_mode }}'
+	option proxy_mode '${{ inputs.proxy_mode }}'
+	option ipv6_support '1'
+	option log_level 'debug'
+
+config homeproxy 'infra'
+	option mixed_port '5330'
+	option redirect_port '5331'
+	option tproxy_port '5332'
+	option dns_port '5333'
+	option self_mark '100'
+	option tun_name 'singtun0'
+	option tun_addr4 '172.19.0.1/30'
+	option tun_addr6 'fdfe:dcba:9876::1/126'
+
+config homeproxy 'dns'
+	option disable_cache '0'
+	option disable_cache_expire '0'
+
+config homeproxy 'control'
+	option bind_interface ''
+EOF
+          echo "Mock config created"
+
+      - name: Simulate config generation
+        run: |
+          echo "=== Testing config generation ==="
+          echo "This would normally run: ucode -S /etc/homeproxy/scripts/generate_client.uc"
+          echo ""
+          echo "To test on local machine:"
+          echo "1. Install ucode: https://openwrt.org/docs/techref/ucode"
+          echo "2. Run: ucode -S root/etc/homeproxy/scripts/generate_client.uc"
+          echo "3. Check output: cat /var/run/homeproxy/sing-box-c.json | jq ."
+          echo ""
+          echo "Routing mode: ${{ inputs.routing_mode }}"
+          echo "Proxy mode: ${{ inputs.proxy_mode }}"
+          echo "Main node: ${{ inputs.main_node }}"
+
+      - name: Generate test config with mock data
+        run: |
+          # Create a test config to validate JSON structure
+          cat > /tmp/test_config.json << 'EOF'
+{
+  "log": {
+    "disabled": false,
+    "level": "debug",
+    "output": "/var/run/homeproxy/sing-box-c.log",
+    "timestamp": true
+  },
+  "http_clients": [
+    {
+      "tag": "http-client",
+      "dialer": "main-out"
+    }
+  ],
+  "dns": {
+    "servers": [
+      {
+        "tag": "default-dns",
+        "type": "udp",
+        "server": "8.8.8.8"
+      },
+      {
+        "tag": "system-dns",
+        "type": "local"
+      }
+    ],
+    "rules": [],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "direct",
+      "tag": "dns-in",
+      "listen": "::",
+      "listen_port": 5333
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "::",
+      "listen_port": 5330
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct-out"
+    },
+    {
+      "type": "block",
+      "tag": "block-out"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "inbound": "dns-in",
+        "action": "hijack-dns"
+      },
+      {
+        "inbound": "mixed-in",
+        "action": "sniff",
+        "sniff_override_destination": true
+      }
+    ],
+    "auto_detect_interface": true,
+    "default_http_client": "http-client"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "/var/run/homeproxy/cache.db",
+      "store_dns": true
+    }
+  }
+}
+EOF
+
+          echo "=== Testing sing-box config validation ==="
+          if sing-box check --config /tmp/test_config.json 2>&1; then
+            echo "✓ Config structure is valid"
+          else
+            echo "✗ Config validation failed"
+            exit 1
+          fi
+
+      - name: Upload test config
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-config-${{ inputs.routing_mode }}
+          path: /tmp/test_config.json

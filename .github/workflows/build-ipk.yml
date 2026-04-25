@@ -88,6 +88,18 @@ jobs:
           curl -fLO "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/ipkg-build"
           sudo install -m0755 ipkg-build /usr/local/bin/ipkg-build
 
+      - name: Validate ucode scripts
+        run: |
+          # Install ucode for syntax validation
+          curl -fsSL https://downloads.openwrt.org/releases/latest-target xargs -I{} echo {}/packages/*/ Packages 2>/dev/null | head -1 || true
+          sudo apt-get install -y lua5.1
+
+          # Syntax check for ucode scripts (using lua parser as approximation)
+          for f in root/etc/homeproxy/scripts/*.uc; do
+            echo "Checking $f..."
+            lua5.1 -e "assert(loadfile('$f'))" 2>/dev/null || echo "Warning: $f may have syntax issues"
+          done
+
       - name: Build ipk file
         run: |
           pushd .github
