@@ -83,6 +83,10 @@ if (uci.get(uciconfig, ucimain, 'routing_port') === 'all')
 if (uci.get(uciconfig, 'experimental'))
 	uci.delete(uciconfig, 'experimental');
 
+/* independent_cache was deprecated in sb 1.14 */
+if (uci.get(uciconfig, ucidnssetting, 'independent_cache'))
+	uci.delete(uciconfig, ucidnssetting, 'independent_cache');
+
 /* block-dns was removed from built-in dns servers */
 const default_dns_server = uci.get(uciconfig, ucidns, 'default_server');
 if (default_dns_server === 'block-dns') {
@@ -210,6 +214,12 @@ uci.foreach(uciconfig, ucidnsrule, (cfg) => {
 
 /* nodes options */
 uci.foreach(uciconfig, ucinode, (cfg) => {
+	/* override_address/override_port were moved to routing rules in sb 1.11 */
+	if (!isEmpty(cfg.override_address))
+		uci.delete(uciconfig, cfg['.name'], 'override_address');
+	if (!isEmpty(cfg.override_port))
+		uci.delete(uciconfig, cfg['.name'], 'override_port');
+
 	/* tls_ech_tls_disable_drs is useless and deprecated in sb 1.12 */
 	if (!isEmpty(cfg.tls_ech_tls_disable_drs))
 		uci.delete(uciconfig, cfg['.name'], 'tls_ech_tls_disable_drs');
@@ -236,6 +246,11 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 	} else if (!cfg.action) {
 		/* add missing 'action' field */
 		uci.set(uciconfig, cfg['.name'], 'action', 'route');
+	}
+
+	/* override_address/override_port moved to route-options action in sb 1.11 */
+	if (cfg.override_address || cfg.override_port) {
+		uci.set(uciconfig, cfg['.name'], 'action', 'route-options');
 	}
 });
 

@@ -232,8 +232,6 @@ function generate_outbound(node) {
 		password: node.password,
 
 		/* Direct */
-		override_address: node.override_address,
-		override_port: strToInt(node.override_port),
 		proxy_protocol: strToInt(node.proxy_protocol),
 		/* AnyTLS */
 		idle_session_check_interval: strToTime(node.anytls_idle_session_check_interval),
@@ -406,6 +404,14 @@ config.log = {
 	timestamp: true
 };
 
+/* HTTP clients */
+config.http_clients = [
+	{
+		tag: 'http-client',
+		dialer: 'main-out'
+	}
+];
+
 /* NTP */
 if (!isEmpty(ntp_server))
 	config.ntp = {
@@ -435,7 +441,6 @@ config.dns = {
 	strategy: dns_default_strategy,
 	disable_cache: strToBool(dns_disable_cache),
 	disable_expire: strToBool(dns_disable_cache_expire),
-	independent_cache: strToBool(dns_independent_cache),
 	client_subnet: dns_client_subnet
 };
 
@@ -605,8 +610,6 @@ push(config.inbounds, {
 	listen: '::',
 	listen_port: int(mixed_port),
 	udp_timeout: strToTime(udp_timeout),
-	sniff: true,
-	sniff_override_destination: strToBool(sniff_override),
 	set_system_proxy: false
 });
 
@@ -616,9 +619,7 @@ if (match(proxy_mode, /redirect/))
 		tag: 'redirect-in',
 
 		listen: '::',
-		listen_port: int(redirect_port),
-		sniff: true,
-		sniff_override_destination: strToBool(sniff_override)
+		listen_port: int(redirect_port)
 	});
 if (match(proxy_mode, /tproxy/))
 	push(config.inbounds, {
@@ -628,9 +629,7 @@ if (match(proxy_mode, /tproxy/))
 		listen: '::',
 		listen_port: int(tproxy_port),
 		network: 'udp',
-		udp_timeout: strToTime(udp_timeout),
-		sniff: true,
-		sniff_override_destination: strToBool(sniff_override)
+		udp_timeout: strToTime(udp_timeout)
 	});
 if (match(proxy_mode, /tun/))
 	push(config.inbounds, {
@@ -643,9 +642,7 @@ if (match(proxy_mode, /tun/))
 		auto_route: false,
 		endpoint_independent_nat: strToBool(endpoint_independent_nat),
 		udp_timeout: strToTime(udp_timeout),
-		stack: tcpip_stack,
-		sniff: true,
-		sniff_override_destination: strToBool(sniff_override)
+		stack: tcpip_stack
 	});
 /* Inbound end */
 
@@ -794,17 +791,32 @@ config.route = {
 		{
 			inbound: 'dns-in',
 			action: 'hijack-dns'
+		},
+		{
+			inbound: 'mixed-in',
+			action: 'sniff',
+			sniff_override_destination: strToBool(sniff_override)
+		},
+		{
+			inbound: 'redirect-in',
+			action: 'sniff',
+			sniff_override_destination: strToBool(sniff_override)
+		},
+		{
+			inbound: 'tproxy-in',
+			action: 'sniff',
+			sniff_override_destination: strToBool(sniff_override)
+		},
+		{
+			inbound: 'tun-in',
+			action: 'sniff',
+			sniff_override_destination: strToBool(sniff_override)
 		}
-		/*
-		 * leave for sing-box 1.13.0
-		 * {
-		 * 	action: 'sniff'
-		 * }
-		 */
 	],
 	rule_set: [],
 	auto_detect_interface: isEmpty(default_interface) ? true : null,
-	default_interface: default_interface
+	default_interface: default_interface,
+	default_http_client: 'http-client'
 };
 
 /* Routing rules */
@@ -865,21 +877,21 @@ if (!isEmpty(main_node)) {
 			tag: 'geoip-cn',
 			format: 'binary',
 			url: 'https://fastly.jsdelivr.net/gh/1715173329/IPCIDR-CHINA@rule-set/cn.srs',
-			download_detour: 'main-out'
+			http_client: 'http-client'
 		});
 		push(config.route.rule_set, {
 			type: 'remote',
 			tag: 'geosite-cn',
 			format: 'binary',
 			url: 'https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-cn.srs',
-			download_detour: 'main-out'
+			http_client: 'http-client'
 		});
 		push(config.route.rule_set, {
 			type: 'remote',
 			tag: 'geosite-noncn',
 			format: 'binary',
 			url: 'https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-!cn.srs',
-			download_detour: 'main-out'
+			http_client: 'http-client'
 		});
 	}
 
@@ -925,7 +937,7 @@ if (!isEmpty(main_node)) {
 			rule_set_ip_cidr_match_source: strToBool(cfg.rule_set_ip_cidr_match_source),
 			rule_set_ip_cidr_accept_empty: strToBool(cfg.rule_set_ip_cidr_accept_empty),
 			invert: strToBool(cfg.invert),
-			action: cfg.action,
+			action: (cfg.action === 'route' && (cfg.override_address || cfg.override_port)) ? 'route-options' : cfg.action,
 			outbound: get_outbound(cfg.outbound),
 			override_address: cfg.override_address,
 			override_port: strToInt(cfg.override_port),
@@ -951,7 +963,7 @@ if (!isEmpty(main_node)) {
 			format: cfg.format,
 			path: cfg.path,
 			url: cfg.url,
-			download_detour: get_outbound(cfg.outbound),
+			http_client: get_outbound(cfg.outbound),
 			update_interval: cfg.update_interval
 		});
 	});
@@ -964,8 +976,8 @@ if (routing_mode in ['bypass_mainland_china', 'custom']) {
 		cache_file: {
 			enabled: true,
 			path: RUN_DIR + '/cache.db',
-			store_rdrc: strToBool(cache_file_store_rdrc),
-			rdrc_timeout: strToTime(cache_file_rdrc_timeout),
+			store_dns: strToBool(cache_file_store_rdrc),
+			dns_timeout: strToTime(cache_file_rdrc_timeout),
 		}
 	};
 }

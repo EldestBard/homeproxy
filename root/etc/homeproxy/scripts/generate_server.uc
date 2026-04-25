@@ -122,7 +122,8 @@ uci.foreach(uciconfig, uciserver, (cfg) => {
 			cipher_suites: cfg.tls_cipher_suites,
 			certificate_path: cfg.tls_cert_path,
 			key_path: cfg.tls_key_path,
-			acme: (cfg.tls_acme === '1') ? {
+			certificate: (cfg.tls_acme === '1') ? {
+				type: 'acme',
 				domain: cfg.tls_acme_domain,
 				data_directory: HP_DIR + '/certs',
 				default_server_name: cfg.tls_acme_dsn,
