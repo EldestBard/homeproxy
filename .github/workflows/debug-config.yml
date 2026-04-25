@@ -93,89 +93,13 @@ jobs:
 
       - name: Generate test config with mock data
         run: |
-          cat > /tmp/test_config.json << 'ENDOFJSON'
-{
-  "log": {
-    "disabled": false,
-    "level": "debug",
-    "output": "/var/run/homeproxy/sing-box-c.log",
-    "timestamp": true
-  },
-  "http_clients": [
-    {
-      "tag": "http-client",
-      "dialer": "main-out"
-    }
-  ],
-  "dns": {
-    "servers": [
-      {
-        "tag": "default-dns",
-        "type": "udp",
-        "server": "8.8.8.8"
-      },
-      {
-        "tag": "system-dns",
-        "type": "local"
-      }
-    ],
-    "rules": [],
-    "strategy": "ipv4_only"
-  },
-  "inbounds": [
-    {
-      "type": "direct",
-      "tag": "dns-in",
-      "listen": "::",
-      "listen_port": 5333
-    },
-    {
-      "type": "mixed",
-      "tag": "mixed-in",
-      "listen": "::",
-      "listen_port": 5330
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct-out"
-    },
-    {
-      "type": "block",
-      "tag": "block-out"
-    }
-  ],
-  "route": {
-    "rules": [
-      {
-        "inbound": "dns-in",
-        "action": "hijack-dns"
-      },
-      {
-        "inbound": "mixed-in",
-        "action": "sniff",
-        "sniff_override_destination": true
-      }
-    ],
-    "auto_detect_interface": true,
-    "default_http_client": "http-client"
-  },
-  "experimental": {
-    "cache_file": {
-      "enabled": true,
-      "path": "/var/run/homeproxy/cache.db",
-      "store_dns": true
-    }
-  }
-}
-ENDOFJSON
+          echo '{"log":{"disabled":false,"level":"debug","output":"/var/run/homeproxy/sing-box-c.log","timestamp":true},"http_clients":[{"tag":"http-client","dialer":"main-out"}],"dns":{"servers":[{"tag":"default-dns","type":"udp","server":"8.8.8.8"},{"tag":"system-dns","type":"local"}],"rules":[],"strategy":"ipv4_only"},"inbounds":[{"type":"direct","tag":"dns-in","listen":"::","listen_port":5333},{"type":"mixed","tag":"mixed-in","listen":"::","listen_port":5330}],"outbounds":[{"type":"direct","tag":"direct-out"},{"type":"block","tag":"block-out"}],"route":{"rules":[{"inbound":"dns-in","action":"hijack-dns"},{"inbound":"mixed-in","action":"sniff","sniff_override_destination":true}],"auto_detect_interface":true,"default_http_client":"http-client"},"experimental":{"cache_file":{"enabled":true,"path":"/var/run/homeproxy/cache.db","store_dns":true}}}' > /tmp/test_config.json
 
           echo "=== Testing sing-box config validation ==="
           if sing-box check --config /tmp/test_config.json 2>&1; then
-            echo "✓ Config structure is valid"
+            echo "Config structure is valid"
           else
-            echo "✗ Config validation failed"
+            echo "Config validation failed"
             exit 1
           fi
 
