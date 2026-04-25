@@ -66,40 +66,15 @@ jobs:
       - name: Display sing-box version
         run: |
           sing-box version
-          sing-box version --倒
           echo "---"
-          sing-box -D . list 2>/dev/null || echo "No features available"
+          sing-box list 2>/dev/null || echo "No features available"
 
       - name: Create mock UCI config for testing
         run: |
           mkdir -p /tmp/homeproxy_test
 
-          # Create minimal UCI config structure
-          cat > /tmp/homeproxy_test/homeproxy_config << 'EOF'
-config homeproxy 'config'
-	option main_node '${{ inputs.main_node }}'
-	option routing_mode '${{ inputs.routing_mode }}'
-	option proxy_mode '${{ inputs.proxy_mode }}'
-	option ipv6_support '1'
-	option log_level 'debug'
-
-config homeproxy 'infra'
-	option mixed_port '5330'
-	option redirect_port '5331'
-	option tproxy_port '5332'
-	option dns_port '5333'
-	option self_mark '100'
-	option tun_name 'singtun0'
-	option tun_addr4 '172.19.0.1/30'
-	option tun_addr6 'fdfe:dcba:9876::1/126'
-
-config homeproxy 'dns'
-	option disable_cache '0'
-	option disable_cache_expire '0'
-
-config homeproxy 'control'
-	option bind_interface ''
-EOF
+          # Create minimal UCI config structure using printf to allow variable substitution
+          printf 'config homeproxy '\''config'\''\n\toption main_node '\''%s'\''\n\toption routing_mode '\''%s'\''\n\toption proxy_mode '\''%s'\''\n\toption ipv6_support '\''1'\''\n\toption log_level '\''debug'\''\n\nconfig homeproxy '\''infra'\''\n\toption mixed_port '\''5330'\''\n\toption redirect_port '\''5331'\''\n\toption tproxy_port '\''5332'\''\n\toption dns_port '\''5333'\''\n\toption self_mark '\''100'\''\n\toption tun_name '\''singtun0'\''\n\toption tun_addr4 '\''172.19.0.1/30'\''\n\toption tun_addr6 '\''fdfe:dcba:9876::1/126'\''\n\nconfig homeproxy '\''dns'\''\n\toption disable_cache '\''0'\''\n\toption disable_cache_expire '\''0'\''\n\nconfig homeproxy '\''control'\''\n\toption bind_interface '\'\'\n' "${{ inputs.main_node }}" "${{ inputs.routing_mode }}" "${{ inputs.proxy_mode }}" > /tmp/homeproxy_test/homeproxy_config
           echo "Mock config created"
 
       - name: Simulate config generation
